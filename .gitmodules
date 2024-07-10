@@ -1,0 +1,9 @@
+[submodule "plugins/LiteLoaderQQNT-lite_tools"]
+	path = plugins/LiteLoaderQQNT-lite_tools
+	url = https://github.com/xiyuesaves/LiteLoaderQQNT-lite_tools.git
+[submodule "plugins/More-Materials"]
+	path = plugins/More-Materials
+	url = https://github.com/mo-jinran/More-Materials.git
+[submodule "plugins/starrail_ui"]
+	path = plugins/starrail_ui
+	url = https://github.com/SyrieYume/starrail_ui.git
