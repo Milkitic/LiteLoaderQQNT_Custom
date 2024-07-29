@@ -74,7 +74,7 @@
             font-size: x-large;
             font-weight: bold;
         }
-        
+
         p {
             color: var(--text-error);
         }
@@ -128,8 +128,15 @@
                 gap: 8px;
             }
 
-            & :nth-child(1) {
-                width: 120px;
+            & :nth-child(-n+3) {
+                min-width: 120px;
+            }
+
+            & :nth-child(3) {
+                max-width: 240px;
+                white-space: nowrap;
+                overflow: hidden;
+                text-overflow: ellipsis;
             }
         }
     }
@@ -139,20 +146,5 @@
         width: 48px;
         height: 48px;
         border-radius: 8px;
-    }
-
-    /* 插件附加信息 */
-    & a {
-        & {
-            color: var(--text-link);
-        }
-
-        &:hover {
-            color: var(--hover-link);
-        }
-
-        &:active {
-            color: var(--press-link);
-        }
     }
 }

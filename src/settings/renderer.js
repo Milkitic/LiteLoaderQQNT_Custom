@@ -1,4 +1,4 @@
-import default_config from "./static/config.json" assert {type: "json"};
+import default_config from "./static/config.json" with {type: "json"};
 
 
 export class SettingInterface {
@@ -35,15 +35,15 @@ export class SettingInterface {
         });
     }
 
-    async add(plugin) {
-        const default_thumb = `local://root/src/setting/static/default.svg`;
+    add(plugin) {
+        const default_thumb = `local://root/src/settings/static/default.svg`;
         const plugin_thumb = `local:///${plugin.path.plugin}/${plugin.manifest?.thumb}`;
         const thumb = plugin.manifest.thumb ? plugin_thumb : default_thumb;
         const nav_item = document.querySelector(".setting-tab .nav-item").cloneNode(true);
         const view = document.createElement("div");
         nav_item.classList.remove("nav-item-active");
         nav_item.setAttribute("data-slug", plugin.manifest.slug);
-        nav_item.querySelector(".q-icon").innerHTML = await appropriateIcon(thumb);
+        appropriateIcon(thumb).then(async text => nav_item.querySelector(".q-icon").innerHTML = text);
         nav_item.querySelector(".name").textContent = plugin.manifest.name;
         nav_item.addEventListener("click", event => {
             if (!event.currentTarget.classList.contains("nav-item-active")) {
@@ -56,41 +56,30 @@ export class SettingInterface {
         return view;
     }
 
-    async SettingInit() {
+    SettingInit() {
         const style = document.createElement("link");
         style.rel = "stylesheet";
         style.type = "text/css";
-        style.href = "local://root/src/setting/static/style.css";
+        style.href = "local://root/src/settings/static/style.css";
         document.head.append(style);
-        const view = await this.add({
+        const view = this.add({
             manifest: {
                 slug: "config_view",
                 name: "LiteLoaderQQNT",
-                thumb: "./src/setting/static/default.svg"
+                thumb: "./src/settings/static/default.svg"
             },
             path: {
                 plugin: LiteLoader.path.root
             }
         });
-        view.innerHTML = await (await fetch("local://root/src/setting/static/view.html")).text();
-        initVersions(view);
-        initPluginList(view);
-        initPath(view);
-        initAbout(view);
+        fetch("local://root/src/settings/static/view.html").then(async res => {
+            view.innerHTML = await res.text();
+            initVersions(view);
+            initPluginList(view);
+            initPath(view);
+            initAbout(view);
+        });
     }
-}
-
-
-// 禁用插件
-async function disablePlugin(slug, disabled) {
-    const config = await LiteLoader.api.config.get("LiteLoader", default_config);
-    if (disabled) {
-        config.disabled_plugins = config.disabled_plugins.concat(slug);
-    }
-    else {
-        config.disabled_plugins = config.disabled_plugins.filter(item => item != slug);
-    }
-    await LiteLoader.api.config.set("LiteLoader", config);
 }
 
 
@@ -163,12 +152,31 @@ async function initVersions(view) {
 
 async function initPluginList(view) {
     const plugin_item_template = view.querySelector("#plugin-item");
-    const plugin_loader_switch = view.querySelector(".plugins .loader setting-switch");
+    const plugin_install_button = view.querySelector(".plugins .plugin .install setting-button");
+    const plugin_loader_switch = view.querySelector(".plugins .plugin .loader setting-switch");
     const plugin_lists = {
         extension: view.querySelector(".plugins .extension"),
         theme: view.querySelector(".plugins .theme"),
         framework: view.querySelector(".plugins .framework"),
     };
+
+    plugin_install_button.addEventListener("click", async () => {
+        const resule = await LiteLoader.api.openDialog({
+            title: "LiteLoaderQQNT",
+            properties: ["openFile"],
+            filters: [
+                { name: "插件相关文件", extensions: ["zip", "json"] }
+            ]
+        });
+        if (!resule.canceled) {
+            const plugin_filepath = resule.filePaths[0];
+            if (await LiteLoader.api.plugin.install(plugin_filepath)) {
+                alert(`插件安装成功，请重启程序\n${plugin_filepath}`);
+            } else {
+                alert(`插件安装失败，请检查文件\n${plugin_filepath}`);
+            }
+        }
+    });
 
     const config = await LiteLoader.api.config.get("LiteLoader", default_config);
     plugin_loader_switch.toggleAttribute("is-active", config.enable_plugins);
@@ -191,7 +199,7 @@ async function initPluginList(view) {
             continue;
         }
 
-        const default_icon = `local://root/src/setting/static/default.png`;
+        const default_icon = `local://root/src/settings/static/default.png`;
         const plugin_icon = `local:///${plugin.path.plugin}/${plugin.manifest?.icon}`;
         const icon = plugin.manifest?.icon ? plugin_icon : default_icon;
 
@@ -203,6 +211,7 @@ async function initPluginList(view) {
         const plugin_item_description = plugin_item.querySelector(".description");
         const plugin_item_version = plugin_item.querySelector(".version");
         const plugin_item_authors = plugin_item.querySelector(".authors");
+        const plugin_item_repo = plugin_item.querySelector(".repo");
         const plugin_item_switch = plugin_item.querySelector(".switch");
 
         plugin_item_icon.innerHTML = await appropriateIcon(icon);
@@ -210,23 +219,34 @@ async function initPluginList(view) {
         plugin_item_name.title = plugin.manifest.name;
         plugin_item_description.textContent = plugin.manifest.description;
         plugin_item_description.title = plugin.manifest.description;
-        plugin_item_version.textContent = plugin.manifest.version;
+
+        const version_link = document.createElement("setting-link");
+        version_link.textContent = plugin.manifest.version;
+        plugin_item_version.append(version_link);
 
         plugin.manifest.authors?.forEach((author, index, array) => {
-            const author_link = document.createElement("a");
+            const author_link = document.createElement("setting-link");
             author_link.textContent = author.name;
-            author_link.addEventListener("click", () => LiteLoader.api.openExternal(author.link));
+            author_link.dataset["value"] = author.link;
             plugin_item_authors.append(author_link);
             if (index < array.length - 1) {
                 plugin_item_authors.append(" | ");
             }
         });
 
+        if (plugin.manifest.repository) {
+            const { repo, branch } = plugin.manifest.repository
+            const repo_link = document.createElement("setting-link");
+            repo_link.textContent = repo;
+            repo_link.dataset["value"] = `https://github.com/${repo}/tree/${branch}`;
+            plugin_item_repo.append(repo_link);
+        } else plugin_item_repo.textContent = "暂无仓库信息";
+
         plugin_item_switch.toggleAttribute("is-active", !config.disabled_plugins.includes(slug));
         plugin_item_switch.addEventListener("click", () => {
             const isActive = plugin_item_switch.hasAttribute("is-active");
             plugin_item_switch.toggleAttribute("is-active", !isActive);
-            disablePlugin(slug, isActive);
+            LiteLoader.api.plugin[isActive ? "disable" : "enable"](slug);
         });
 
         plugin_list.append(plugin_item);
@@ -266,11 +286,25 @@ async function initAbout(view) {
     channel.addEventListener("click", () => LiteLoader.api.openExternal("https://t.me/LiteLoaderQQNT_Channel"));
 
     // Hitokoto - 一言
-    const fetchHitokoto = async () => {
+    let visible = true;
+    const hitokoto_text = view.querySelector(".about .hitokoto_text");
+    const hitokoto_author = view.querySelector(".about .hitokoto_author");
+    const observer = new IntersectionObserver((entries) => {
+        visible = entries[0].isIntersecting;
+    });
+    observer.observe(hitokoto_text);
+    async function trueUpdate() {
         const { hitokoto, creator } = await (await fetch("https://v1.hitokoto.cn")).json();
-        view.querySelector(".about .hitokoto_text").textContent = hitokoto;
-        view.querySelector(".about .hitokoto_author").textContent = creator;
+        hitokoto_text.textContent = hitokoto;
+        hitokoto_author.textContent = creator;
+    }
+    async function fetchHitokoto() {
+        // 页面不可见或一言不可见时不更新
+        if (document.hidden || !visible) {
+            return;
+        }
+        await trueUpdate();
     };
-    fetchHitokoto();
+    trueUpdate();
     setInterval(fetchHitokoto, 1000 * 10);
 }

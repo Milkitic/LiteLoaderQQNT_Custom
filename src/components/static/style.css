@@ -1,4 +1,5 @@
 @scope (:host) {
+
     :scope[is-disabled],
     :scope [is-disabled] {
         opacity: 0.3;
@@ -210,7 +211,7 @@
         font-size: 12px;
         padding: 0px 8px;
     }
-    
+
     li:hover {
         background-color: var(--overlay_hover);
     }
@@ -317,6 +318,7 @@
             color: var(--on_brand_primary);
             border-color: var(--brand_standard);
         }
+
         button:hover {
             background-color: var(--nt_brand_standard_2_overlay_hover_brand_2_mix);
         }
@@ -332,6 +334,7 @@
             color: var(--text_primary);
             border-color: var(--fill_standard_primary);
         }
+
         button:hover {
             background-color: var(--overlay_hover);
         }
@@ -358,6 +361,14 @@
         font-size: min(var(--font_size_2), 16px);
         line-height: min(var(--line_height_2), 22px);
         margin-top: 4px;
+    }
+}
+
+
+@scope (:host(setting-link)) {
+    :scope {
+        color: var(--text_link);
+        cursor: pointer;
     }
 }
 

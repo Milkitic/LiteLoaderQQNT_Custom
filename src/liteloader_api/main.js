@@ -1,6 +1,11 @@
-const { ipcMain, shell } = require("electron");
+const default_config = require("../settings/static/config.json");
+const { ipcMain, shell, dialog } = require("electron");
 const path = require("node:path");
 const fs = require("node:fs");
+
+
+const launcher_node = path.join(process.resourcesPath, "app/app_launcher/launcher.node");
+require(launcher_node).load("external_admzip", module);
 
 
 const root_path = path.join(__dirname, "..", "..");
@@ -35,6 +40,71 @@ function getConfig(slug, default_config) {
 }
 
 
+function pluginInstall(plugin_path) {
+    try {
+        if (fs.statSync(plugin_path).isFile()) {
+            // 通过 ZIP 格式文件安装插件
+            if (path.extname(plugin_path).toLowerCase() == ".zip") {
+                const plugin_zip = new exports.admZip.default(plugin_path);
+                for (const entry of plugin_zip.getEntries()) {
+                    if (entry.entryName == "manifest.json" || entry.entryName.split(/\/(.+)/)[1] == "manifest.json") {
+                        const { slug } = JSON.parse(entry.getData());
+                        if (LiteLoader.api.plugin.uninstall(slug, false)) {
+                            const dest_path = path.join(LiteLoader.path.plugins, slug);
+                            plugin_zip.extractAllTo(dest_path);
+                            return true;
+                        }
+                    }
+                }
+            }
+            // 通过 manifest.json 文件安装插件
+            if (path.basename(plugin_path) == "manifest.json") {
+                const { slug } = JSON.parse(fs.readFileSync(plugin_path));
+                if (LiteLoader.api.plugin.uninstall(slug, false)) {
+                    const src_path = path.dirname(plugin_path);
+                    const dest_path = path.join(LiteLoader.path.plugins, slug);
+                    fs.cpSync(src_path, dest_path, { recursive: true });
+                    return true;
+                }
+            }
+        }
+    } catch (error) {
+        console.error(error);
+    }
+    return false;
+}
+
+
+function pluginUninstall(slug, delete_data = false) {
+    if (!(slug in LiteLoader.plugins)) return true;
+    try {
+        const { plugin, data } = LiteLoader.plugins[slug].path;
+        if (delete_data) {
+            fs.rmdirSync(data);
+        }
+        fs.rmdirSync(plugin);
+        return true;
+    } catch (error) {
+        console.log(error);
+    }
+    return false;
+}
+
+
+function pluginEnable(slug) {
+    const config = LiteLoader.api.config.get("LiteLoader", default_config);
+    config.disabled_plugins = config.disabled_plugins.filter(item => item != slug);
+    LiteLoader.api.config.set("LiteLoader", config);
+}
+
+
+function pluginDisable(slug) {
+    const config = LiteLoader.api.config.get("LiteLoader", default_config);
+    config.disabled_plugins = config.disabled_plugins.concat(slug);
+    LiteLoader.api.config.set("LiteLoader", config);
+}
+
+
 const LiteLoader = {
     path: {
         root: root_path,
@@ -62,21 +132,31 @@ const LiteLoader = {
             set: setConfig,
             get: getConfig
         },
+        plugin: {
+            install: pluginInstall,
+            uninstall: pluginUninstall,
+            enable: pluginEnable,
+            disable: pluginDisable
+        },
         openExternal: shell.openExternal,
-        openPath: shell.openPath
+        openPath: shell.openPath,
+        openDialog: options => dialog.showOpenDialog(null, options)
     }
 };
 
 
 // 将LiteLoader对象挂载到全局
+const whitelist = [
+    LiteLoader.path.root,
+    LiteLoader.path.profile,
+    fs.realpathSync(LiteLoader.path.root),
+    fs.realpathSync(LiteLoader.path.profile),
+];
 Object.defineProperty(globalThis, "LiteLoader", {
     configurable: false,
     get() {
         const stack = new Error().stack.split("\n")[2];
-        if (stack.includes(LiteLoader.path.root)) {
-            return LiteLoader;
-        }
-        if (stack.includes(LiteLoader.path.profile)) {
+        if (whitelist.some(item => stack.includes(item))) {
             return LiteLoader;
         }
     }
@@ -92,23 +172,11 @@ ipcMain.on("LiteLoader.LiteLoader.LiteLoader", (event) => {
 });
 
 
-ipcMain.handle("LiteLoader.LiteLoader.api", (event, name, method, ...args) => {
-    if (name == "config") {
-        if (method == "get") {
-            return LiteLoader.api.config.get(...args);
-        }
-        if (method == "set") {
-            return LiteLoader.api.config.set(...args);
-        }
-    }
-    if (name == "openExternal") {
-        if (method == "openExternal") {
-            return LiteLoader.api.openExternal(...args);
-        }
-    }
-    if (name == "openPath") {
-        if (method == "openPath") {
-            return LiteLoader.api.openPath(...args);
-        }
+ipcMain.handle("LiteLoader.LiteLoader.api", (event, name, method, args) => {
+    try {
+        if (name == method) return LiteLoader.api[method](...args);
+        else return LiteLoader.api[name][method](...args);
+    } catch (error) {
+        return null;
     }
 });

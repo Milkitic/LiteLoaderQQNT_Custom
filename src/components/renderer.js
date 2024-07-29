@@ -1,4 +1,4 @@
-import style from "./static/style.css" assert { type: "css" };
+import style from "./static/style.css" with { type: "css" };
 
 const html_url = "local://root/src/components/static/template.html";
 const html_file = await (await fetch(html_url)).text();
@@ -209,6 +209,19 @@ customElements.define("setting-text", class extends SettingElementBase {
     static observedAttributes = ["data-type"];
     constructor() {
         super("setting-text");
+    }
+});
+
+
+customElements.define("setting-link", class extends SettingElementBase {
+    static observedAttributes = ["data-value"];
+    constructor() {
+        super("setting-link");
+        this.addEventListener("click", () => {
+            if (this.dataset["value"]) {
+                LiteLoader.api.openExternal(this.dataset["value"]);
+            }
+        });
     }
 });
 

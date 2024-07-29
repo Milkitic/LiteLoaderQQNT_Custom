@@ -1,128 +1,85 @@
 require("./liteloader_api/main.js");
+require("./loader_core/plugin_loader.js");
+require("./main.js");
 
-const default_config = require("./setting/static/config.json");
+const { app, dialog } = require("electron");
+const path = require("path");
+const fs = require("fs");
 
-const { protocol } = require("electron");
-const path = require("node:path");
-const fs = require("node:fs");
+let isLatest = true;
+let preloads = {};
 
-
-protocol.registerSchemesAsPrivileged([
-    {
-        scheme: "local",
-        privileges: {
-            standard: false,
-            allowServiceWorkers: true,
-            corsEnabled: false,
-            supportFetchAPI: true,
-            stream: true,
-            bypassCSP: true
-        }
-    }
-]);
-
-
-// 找到所有插件并挂载到 LiteLoader.plugins 对象
-(() => {
-    const output = (...args) => console.log("\x1b[32m%s\x1b[0m", "[LiteLoader]", ...args);
-    const config = LiteLoader.api.config.get("LiteLoader", default_config);
-
-    // 如果设定环境变量
-    if (process.env?.LITELOADERQQNT_PROFILE) {
-        output("Use LITELOADERQQNT_PROFILE environment variables:", LiteLoader.path.profile);
-    }
-
-    // 如果插件全局开关为关闭状态
-    if (!config.enable_plugins) {
-        output("Plugin loader is disabled, no plugins will be loaded.");
-        return;
-    }
-
-    output("Start finding all plugins.");
-
-    // 如果插件目录不存在
-    if (!fs.existsSync(LiteLoader.path.plugins)) {
-        output("The plugins directory does not exist.");
-        output("A new plugin directory will be created.");
-        fs.mkdir(LiteLoader.path.plugins, { recursive: true }, error => {
-            if (error) {
-                output("Plugins directory creation failed!");
-                output("Please check the plugins directory.");
-                return;
-            }
-            output("Plugins directory created successfully!");
-        });
-        return;
-    }
-
-    // 读取插件目录
-    try {
-        for (const plugin_pathname of fs.readdirSync(LiteLoader.path.plugins, "utf-8")) {
-            try {
-                const manifest_file = path.join(LiteLoader.path.plugins, plugin_pathname, "manifest.json");
-                const manifest = JSON.parse(fs.readFileSync(manifest_file, "utf-8"));
-
-                const incompatible_version = Number(manifest.manifest_version) != 4;
-                const incompatible_platform = !manifest.platform.includes(LiteLoader.os.platform);
-                const disabled_plugin = config.disabled_plugins.includes(manifest.slug);
-
-                const plugin_path = path.join(LiteLoader.path.plugins, plugin_pathname);
-                const data_path = path.join(LiteLoader.path.data, manifest.slug);
-
-                const main_file = path.join(plugin_path, manifest?.injects?.main ?? "");
-                const preload_file = path.join(plugin_path, manifest?.injects?.preload ?? "");
-                const renderer_file = path.join(plugin_path, manifest?.injects?.renderer ?? "");
-
-                LiteLoader.plugins[manifest.slug] = {
-                    manifest: manifest,
-                    incompatible: incompatible_version || incompatible_platform,
-                    disabled: disabled_plugin,
-                    path: {
-                        plugin: plugin_path,
-                        data: data_path,
-                        injects: {
-                            main: fs.statSync(main_file).isFile() ? main_file : null,
-                            preload: fs.statSync(preload_file).isFile() ? preload_file : null,
-                            renderer: fs.statSync(renderer_file).isFile() ? renderer_file : null
-                        }
-                    }
-                }
-            }
-            catch {
-                continue;
-            }
-        }
-    }
-    catch {
-        output("Failed to read plugins directory!");
-        output("Please check the plugins directory.");
-    }
-
-    // 输出插件状态
-    for (const plugin of Object.values(LiteLoader.plugins)) {
-        const dependencies = plugin.manifest?.dependencies?.filter(slug => !LiteLoader.plugins[slug]);
-        // 输出不兼容
-        if (plugin.incompatible) {
-            output("Found plugin:", plugin.manifest.name, "(Incompatible)");
-            continue;
-        }
-        // 输出已禁用
-        if (plugin.disabled) {
-            output("Found plugin:", plugin.manifest.name, "(Disabled)");
-            continue;
-        }
-        // 缺少依赖
-        if (dependencies?.length) {
-            output("Found plugin:", plugin.manifest.name, "Missing dependencies:", dependencies.toString());
-            continue;
-        }
-        output("Found plugin:", plugin.manifest.name);
-    }
-
-    // 输出找到了多少插件
-    const plugins_length = Object.keys(LiteLoader.plugins).length;
-    output(`Found ${plugins_length} plugins,`, plugins_length ? "start loading plugins." : "no plugin to be loaded.");
+const liteloader_preload_path = path.join(LiteLoader.path.root, "src/preload.js");
+const qqnt_application_path = (() => {
+    const app_path = path.join(process.resourcesPath, "app");
+    if (!fs.existsSync(path.join(app_path, "versions"))) return path.join(app_path, "application");
+    else return path.join(app_path, "versions", LiteLoader.versions.qqnt, "application");
 })();
 
+const profile_application_path = path.join(LiteLoader.path.profile, "application");
+const inject_application_path = `${qqnt_application_path}/../application`;
 
-require("./main.js");
+const liteloader_preload_content = fs.readFileSync(liteloader_preload_path, "utf-8");
+const qqnt_application_content = fs.readdirSync(`${qqnt_application_path}.asar`, "utf-8");
+
+for (const item_name of qqnt_application_content) {
+    if (!item_name.includes("preload")) continue;
+
+    const qqnt_preload_path = path.join(qqnt_application_path, item_name);
+    const qqnt_preload_content = fs.readFileSync(qqnt_preload_path, "utf-8");
+
+    const inject_preload_path = `${inject_application_path}/${item_name}`;
+    const inject_preload_content = `${liteloader_preload_content}\n{${qqnt_preload_content}}`;
+
+    preloads[item_name] = inject_preload_content;
+
+    if (fs.existsSync(inject_preload_path)) {
+        const injected_preload_content = fs.readFileSync(inject_preload_path, "utf-8");
+        if (inject_preload_content == injected_preload_content) continue;
+    }
+
+    isLatest = false;
+}
+
+if (!isLatest) {
+    try {
+        if (fs.existsSync(inject_application_path)) {
+            fs.rmSync(inject_application_path, { recursive: true, force: true });
+        }
+        fs.mkdirSync(inject_application_path, { recursive: true });
+
+        for (const item_name in preloads) {
+            const inject_preload_path = path.join(inject_application_path, item_name);
+            const inject_preload_content = preloads[item_name];
+            fs.writeFileSync(inject_preload_path, inject_preload_content, "utf-8");
+        }
+    }
+    catch (error) {
+        if (fs.existsSync(profile_application_path)) {
+            fs.rmSync(profile_application_path, { recursive: true, force: true });
+        }
+        fs.mkdirSync(profile_application_path, { recursive: true });
+
+        for (const item_name in preloads) {
+            const profile_preload_path = path.join(profile_application_path, item_name);
+            const profile_preload_content = preloads[item_name];
+            fs.writeFileSync(profile_preload_path, profile_preload_content, "utf-8");
+        }
+
+        app.whenReady().then(() => {
+            dialog.showMessageBoxSync(null, {
+                type: "error",
+                title: "LiteLoaderQQNT",
+                message: "初始化失败！不用担心，这可能需要你手动移动某个文件夹解决\n"
+                    + "错误一般由于目标文件不存在，或目标文件内容与预期不符导致\n"
+                    + "由于权限不足，无法自动完成此操作，请按照下方提示手动操作\n\n"
+                    + "将文件夹：\n"
+                    + `${profile_application_path}\n`
+                    + "移到此处：\n"
+                    + `${path.join(qqnt_application_path, "..")}\n\n`
+                    + `更多信息请查看官网：${LiteLoader.package.liteloader.homepage}`,
+            });
+            app.exit(0);
+        });
+    }
+}
