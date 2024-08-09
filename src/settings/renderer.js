@@ -160,23 +160,18 @@ async function initPluginList(view) {
         framework: view.querySelector(".plugins .framework"),
     };
 
-    plugin_install_button.addEventListener("click", async () => {
-        const resule = await LiteLoader.api.openDialog({
-            title: "LiteLoaderQQNT",
-            properties: ["openFile"],
-            filters: [
-                { name: "插件相关文件", extensions: ["zip", "json"] }
-            ]
-        });
-        if (!resule.canceled) {
-            const plugin_filepath = resule.filePaths[0];
-            if (await LiteLoader.api.plugin.install(plugin_filepath)) {
-                alert(`插件安装成功，请重启程序\n${plugin_filepath}`);
-            } else {
-                alert(`插件安装失败，请检查文件\n${plugin_filepath}`);
-            }
-        }
+    const input_file = document.createElement("input");
+    input_file.type = "file";
+    input_file.accept = ".zip,.json";
+    input_file.addEventListener("change", async () => {
+        const filepath = input_file.files?.[0]?.path;
+        const config = await LiteLoader.api.config.get("LiteLoader", default_config);
+        const has_install = Object.values(config.installing_plugins).some(item => item.plugin_path == filepath);
+        const is_install = await LiteLoader.api.plugin.install(filepath, has_install);
+        alert(is_install ? (has_install ? "已取消安装此插件" : "将在下次启动时安装") : "无法安装无效插件");
+        input_file.value = null;
     });
+    plugin_install_button.addEventListener("click", () => input_file.click());
 
     const config = await LiteLoader.api.config.get("LiteLoader", default_config);
     plugin_loader_switch.toggleAttribute("is-active", config.enable_plugins);
@@ -212,7 +207,11 @@ async function initPluginList(view) {
         const plugin_item_version = plugin_item.querySelector(".version");
         const plugin_item_authors = plugin_item.querySelector(".authors");
         const plugin_item_repo = plugin_item.querySelector(".repo");
-        const plugin_item_switch = plugin_item.querySelector(".switch");
+        const plugin_item_manager = plugin_item.querySelector(".manager");
+        const plugin_item_manager_modal = plugin_item.querySelector(".manager-modal");
+        const manager_modal_enable = plugin_item_manager_modal.querySelector(".enable");
+        const manager_modal_keepdata = plugin_item_manager_modal.querySelector(".keepdata");
+        const manager_modal_uninstall = plugin_item_manager_modal.querySelector(".uninstall");
 
         plugin_item_icon.innerHTML = await appropriateIcon(icon);
         plugin_item_name.textContent = plugin.manifest.name;
@@ -242,11 +241,33 @@ async function initPluginList(view) {
             plugin_item_repo.append(repo_link);
         } else plugin_item_repo.textContent = "暂无仓库信息";
 
-        plugin_item_switch.toggleAttribute("is-active", !config.disabled_plugins.includes(slug));
-        plugin_item_switch.addEventListener("click", () => {
-            const isActive = plugin_item_switch.hasAttribute("is-active");
-            plugin_item_switch.toggleAttribute("is-active", !isActive);
-            LiteLoader.api.plugin[isActive ? "disable" : "enable"](slug);
+        plugin_item_manager_modal.dataset["title"] = plugin.manifest.name;
+
+        plugin_item_manager.addEventListener("click", () => {
+            plugin_item_manager_modal.toggleAttribute("is-active");
+        });
+
+        manager_modal_enable.toggleAttribute("is-active", !config.disabled_plugins.includes(slug));
+        manager_modal_enable.addEventListener("click", () => {
+            const isActive = manager_modal_enable.hasAttribute("is-active");
+            manager_modal_enable.toggleAttribute("is-active", !isActive);
+            LiteLoader.api.plugin.disable(slug, !isActive);
+        });
+
+        manager_modal_keepdata.toggleAttribute("is-active", !!config.deleting_plugins?.[slug]?.data_path);
+        manager_modal_keepdata.addEventListener("click", async () => {
+            const isActive = manager_modal_keepdata.hasAttribute("is-active");
+            manager_modal_keepdata.toggleAttribute("is-active", !isActive);
+            const config = await LiteLoader.api.config.get("LiteLoader", default_config);
+            if (slug in config.deleting_plugins) LiteLoader.api.plugin.delete(slug, !isActive, false);
+        });
+
+        manager_modal_uninstall.toggleAttribute("is-active", !!config.deleting_plugins?.[slug]);
+        manager_modal_uninstall.addEventListener("click", () => {
+            const isActive = manager_modal_uninstall.hasAttribute("is-active");
+            manager_modal_uninstall.toggleAttribute("is-active", !isActive);
+            const keepdata = manager_modal_keepdata.hasAttribute("is-active");
+            LiteLoader.api.plugin.delete(slug, keepdata, isActive);
         });
 
         plugin_list.append(plugin_item);

@@ -1,8 +1,7 @@
 const default_config = require("../settings/static/config.json");
-const { ipcMain, shell, dialog } = require("electron");
+const { ipcMain, shell } = require("electron");
 const path = require("node:path");
 const fs = require("node:fs");
-
 
 const launcher_node = path.join(process.resourcesPath, "app/app_launcher/launcher.node");
 require(launcher_node).load("external_admzip", module);
@@ -40,32 +39,39 @@ function getConfig(slug, default_config) {
 }
 
 
-function pluginInstall(plugin_path) {
+function pluginInstall(plugin_path, undone = false) {
     try {
         if (fs.statSync(plugin_path).isFile()) {
             // 通过 ZIP 格式文件安装插件
             if (path.extname(plugin_path).toLowerCase() == ".zip") {
                 const plugin_zip = new exports.admZip.default(plugin_path);
                 for (const entry of plugin_zip.getEntries()) {
-                    if (entry.entryName == "manifest.json" || entry.entryName.split(/\/(.+)/)[1] == "manifest.json") {
+                    if (entry.entryName == "manifest.json" && !entry.isDirectory) {
                         const { slug } = JSON.parse(entry.getData());
-                        if (LiteLoader.api.plugin.uninstall(slug, false)) {
-                            const dest_path = path.join(LiteLoader.path.plugins, slug);
-                            plugin_zip.extractAllTo(dest_path);
-                            return true;
-                        }
+                        if (slug in LiteLoader.plugins) LiteLoader.api.plugin.delete(slug, false, false);
+                        const config = LiteLoader.api.config.get("LiteLoader", default_config);
+                        if (undone) delete config.installing_plugins[slug];
+                        else config.installing_plugins[slug] = {
+                            plugin_path: plugin_path,
+                            plugin_type: "zip"
+                        };
+                        LiteLoader.api.config.set("LiteLoader", config);
+                        return true;
                     }
                 }
             }
             // 通过 manifest.json 文件安装插件
             if (path.basename(plugin_path) == "manifest.json") {
                 const { slug } = JSON.parse(fs.readFileSync(plugin_path));
-                if (LiteLoader.api.plugin.uninstall(slug, false)) {
-                    const src_path = path.dirname(plugin_path);
-                    const dest_path = path.join(LiteLoader.path.plugins, slug);
-                    fs.cpSync(src_path, dest_path, { recursive: true });
-                    return true;
-                }
+                if (slug in LiteLoader.plugins) LiteLoader.api.plugin.delete(slug, false, false);
+                const config = LiteLoader.api.config.get("LiteLoader", default_config);
+                if (undone) delete config.installing_plugins[slug];
+                else config.installing_plugins[slug] = {
+                    plugin_path: plugin_path,
+                    plugin_type: "json"
+                };
+                LiteLoader.api.config.set("LiteLoader", config);
+                return true;
             }
         }
     } catch (error) {
@@ -75,32 +81,23 @@ function pluginInstall(plugin_path) {
 }
 
 
-function pluginUninstall(slug, delete_data = false) {
+function pluginDelete(slug, delete_data = false, undone = false) {
     if (!(slug in LiteLoader.plugins)) return true;
-    try {
-        const { plugin, data } = LiteLoader.plugins[slug].path;
-        if (delete_data) {
-            fs.rmdirSync(data);
-        }
-        fs.rmdirSync(plugin);
-        return true;
-    } catch (error) {
-        console.log(error);
-    }
-    return false;
-}
-
-
-function pluginEnable(slug) {
+    const { plugin, data } = LiteLoader.plugins[slug].path;
     const config = LiteLoader.api.config.get("LiteLoader", default_config);
-    config.disabled_plugins = config.disabled_plugins.filter(item => item != slug);
+    if (undone) delete config.deleting_plugins[slug];
+    else config.deleting_plugins[slug] = {
+        plugin_path: plugin,
+        data_path: delete_data ? data : null
+    };
     LiteLoader.api.config.set("LiteLoader", config);
 }
 
 
-function pluginDisable(slug) {
+function pluginDisable(slug, undone = false) {
     const config = LiteLoader.api.config.get("LiteLoader", default_config);
-    config.disabled_plugins = config.disabled_plugins.concat(slug);
+    if (undone) config.disabled_plugins = config.disabled_plugins.filter(item => item != slug);
+    else config.disabled_plugins = config.disabled_plugins.concat(slug);
     LiteLoader.api.config.set("LiteLoader", config);
 }
 
@@ -134,13 +131,11 @@ const LiteLoader = {
         },
         plugin: {
             install: pluginInstall,
-            uninstall: pluginUninstall,
-            enable: pluginEnable,
+            delete: pluginDelete,
             disable: pluginDisable
         },
         openExternal: shell.openExternal,
-        openPath: shell.openPath,
-        openDialog: options => dialog.showOpenDialog(null, options)
+        openPath: shell.openPath
     }
 };
 
@@ -149,9 +144,15 @@ const LiteLoader = {
 const whitelist = [
     LiteLoader.path.root,
     LiteLoader.path.profile,
-    fs.realpathSync(LiteLoader.path.root),
-    fs.realpathSync(LiteLoader.path.profile),
+    LiteLoader.path.data,
+    LiteLoader.path.plugins,
 ];
+try {
+    whitelist.push(fs.realpathSync(LiteLoader.path.root));
+    whitelist.push(fs.realpathSync(LiteLoader.path.profile));
+    whitelist.push(fs.realpathSync(LiteLoader.path.plugins));
+    whitelist.push(fs.realpathSync(LiteLoader.path.data));
+} catch { };
 Object.defineProperty(globalThis, "LiteLoader", {
     configurable: false,
     get() {

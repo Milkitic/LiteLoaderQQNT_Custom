@@ -1,6 +1,6 @@
 <template id="plugin-item">
     <setting-item>
-        <div>
+        <div class="info-area">
             <div>
                 <slot class="icon"></slot>
                 <div>
@@ -18,7 +18,33 @@
                 <span>仓库：<slot class="repo"></slot></span>
             </setting-text>
         </div>
-        <setting-switch class="switch"></setting-switch>
+        <setting-button data-type="secondary" class="manager">管理</setting-button>
+        <setting-modal class="manager-modal">
+            <setting-section data-title="开关">
+                <setting-panel>
+                    <setting-list data-direction="column">
+                        <setting-item>
+                            <setting-text>启动时加载此插件</setting-text>
+                            <setting-switch class="enable"></setting-switch>
+                        </setting-item>
+                    </setting-list>
+                </setting-panel>
+            </setting-section>
+            <setting-section data-title="删除">
+                <setting-panel>
+                    <setting-list data-direction="column">
+                        <setting-item>
+                            <setting-text>保留我的插件数据</setting-text>
+                            <setting-switch class="keepdata"></setting-switch>
+                        </setting-item>
+                        <setting-item>
+                            <setting-text>在下次启动时删除</setting-text>
+                            <setting-switch class="uninstall"></setting-switch>
+                        </setting-item>
+                    </setting-list>
+                </setting-panel>
+            </setting-section>
+        </setting-modal>
     </setting-item>
 </template>
 
@@ -65,9 +91,9 @@
             <setting-item class="install">
                 <div>
                     <setting-text>安装新插件</setting-text>
-                    <setting-text data-type="secondary">支持的插件类型：解压前 zip 格式文件 | 解压后 manifest.json 文件</setting-text>
+                    <setting-text data-type="secondary">支持类型：解压前 zip 格式文件 | 解压后 manifest.json 文件</setting-text>
                 </div>
-                <setting-button data-type="secondary">选择插件</setting-button>
+                <setting-button data-type="secondary">选择文件</setting-button>
             </setting-item>
             <setting-item class="loader">
                 <setting-text>插件加载器</setting-text>
