@@ -1,3 +1,6 @@
+const { contextBridge } = require("electron");
+
+
 function topologicalSort(dependencies) {
     const sorted = [];
     const visited = new Set();
@@ -13,41 +16,26 @@ function topologicalSort(dependencies) {
 }
 
 
-exports.MainLoader = class {
+(new class {
 
-    #exports = {};
-
-    init() {
-        // 加载插件
+    async init() {
+        const preloadErrors = {}
         for (const slug of topologicalSort(Object.keys(LiteLoader.plugins))) {
             const plugin = LiteLoader.plugins[slug];
-            if (plugin.disabled || plugin.incompatible) {
+            if (plugin.disabled || plugin.incompatible || plugin.error) {
                 continue;
             }
-            if (plugin.path.injects.main) {
+            if (plugin.path.injects.preload) {
                 try {
-                    this.#exports[slug] = require(plugin.path.injects.main);
+                    runPreloadScript(await (await fetch(`local:///${plugin.path.injects.preload}`)).text());
                 }
                 catch (e) {
-                    plugin.error = { message: `[Main] ${e.message}`, stack: e.stack };
+                    preloadErrors[slug] = { message: `[Preload] ${e.message}`, stack: e.stack };
                 }
             }
         }
+        contextBridge.exposeInMainWorld("LiteLoaderPreloadErrors", preloadErrors);
         return this;
     }
 
-    onBrowserWindowCreated(window) {
-        for (const slug in this.#exports) {
-            const plugin = this.#exports[slug];
-            plugin.onBrowserWindowCreated?.(window);
-        }
-    }
-
-    onLogin(uid) {
-        for (const slug in this.#exports) {
-            const plugin = this.#exports[slug];
-            plugin.onLogin?.(uid);
-        }
-    }
-
-}
+}).init();
